@@ -12,6 +12,7 @@ import signal
 import random
 import select
 import argparse
+import readline
 
 # List of ASCII art banners
 banners = [
@@ -316,6 +317,8 @@ while True:
         while True:
             if not session_started:
                 command = input(Fore.YELLOW + "\n-{-->> " + Fore.GREEN)
+                readline.add_history(command)
+
                 if command.strip() == '':
                      break
                      
