@@ -3,3 +3,9 @@ Greetings
 
 
 SwordShell is a multiple rev shell handler for your needs
+
+
+example usage :
+Python3 Swordshell.py (will start listening on 0.0.0.0:5555 by default)
+
+python3 SwordShell.py -host [YOURIP or Proxy] -port [PORT ]
