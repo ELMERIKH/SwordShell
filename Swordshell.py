@@ -94,7 +94,7 @@ ___<__(|) _   ""-/  / /   /
       /  / /   /  o!O
      /  |,'   /  
     :   /    /
-    [  /   ,'   "serving Justice, one shell at a time"
+    [  /   ,'   "serving Justice, many shells at a time"
     | /  ,'
     |/,-'
     P'
