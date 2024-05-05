@@ -201,7 +201,7 @@ Commands:
   list        - List all sessions
   session <id> - Interact with a session
   upgrade <id> - Upgrade a shell to a meterpreter shell (require metasploit)
-  exec <id> <url> <TYPE> - Execute a PE file in memory filelessly  (EXE, DLL) , doesnt work for gui apps
+  exec <id> <url> <TYPE> - Execute a PE file in memory filelessly  (EXE, DLL) , no GUI !
   persist <id> - Persist a shell using keres(persistance module) 
   exit | Ctrl +c*2    - Exit SwordShell
 """
@@ -287,7 +287,7 @@ def exec_shell(conn, addr, shell_id, url, type):
     time.sleep(2)
     print(command)
     print("[*] DONE\033[0m")
-    
+
 def get_my_ip(host=None):
     if host and host != '0.0.0.0':
         return host
