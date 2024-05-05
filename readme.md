@@ -3,7 +3,7 @@
 Greetings
 -----------
 
-SwordShell is a super multiple rev shell handler for your needs
+SwordShell is a super multiple rev shell handler for your needs (c2 like)
 
 can upgrade a shell to a meterpreter(in memory executing ,no disk drop) 
 
