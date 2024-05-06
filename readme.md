@@ -5,6 +5,8 @@ Greetings
 
 SwordShell is a super multiple rev shell handler for your needs (c2 like)
 
+the following is only for windows rev-shells:
+
 can upgrade a shell to a meterpreter(in memory executing ,no disk drop) 
 
 execute PE filelessly in memory
