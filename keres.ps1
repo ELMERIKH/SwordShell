@@ -9,7 +9,7 @@ param(
     [string]$ScriptArgument = ""
 )
 $homePath = [Environment]::GetFolderPath("UserProfile")
-$hiddenVbsPath = Join-Path -Path $homePath -ChildPath ".script.vbs"
+$hiddenVbsPath = Join-Path -Path $homePath -ChildPath "script.vbs"
 
 $psScript = @'
 $uniqueIdentifier = "Keres"

